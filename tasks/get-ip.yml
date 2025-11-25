@@ -1,0 +1,36 @@
+---
+- name: Wait for VM to get an IP address
+  ansible.builtin.shell: |
+    virsh domifaddr "{{ vm.name }}" --source agent 2>/dev/null || \
+    virsh domifaddr "{{ vm.name }}" --source lease 2>/dev/null || \
+    virsh domifaddr "{{ vm.name }}" --source arp 2>/dev/null
+  environment: "{{ libvirt_vm_virsh_default_env }}"
+  register: vm_ip_result
+  until: vm_ip_result.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')
+  retries: "{{ libvirt_vm_ip_retries | default(30) }}"
+  delay: "{{ libvirt_vm_ip_delay | default(10) }}"
+  changed_when: false
+  become: "{{ libvirt_vm_sudo }}"
+  when: libvirt_vm_wait_for_ip | default(false) | bool
+
+- name: Extract VM IP address
+  ansible.builtin.set_fact:
+    _vm_ip: "{{ vm_ip_result.stdout | regex_search('(\\d+\\.\\d+\\.\\d+\\.\\d+)', '\\1') | first }}"
+  when:
+    - libvirt_vm_wait_for_ip | default(false) | bool
+    - vm_ip_result.stdout is defined
+    - vm_ip_result.stdout | regex_search('\\d+\\.\\d+\\.\\d+\\.\\d+')
+
+- name: Store VM IP in libvirt_vm_ips dictionary
+  ansible.builtin.set_fact:
+    libvirt_vm_ips: "{{ libvirt_vm_ips | default({}) | combine({vm.name: _vm_ip}) }}"
+  when:
+    - libvirt_vm_wait_for_ip | default(false) | bool
+    - _vm_ip is defined
+
+- name: Display VM IP address
+  ansible.builtin.debug:
+    msg: "VM '{{ vm.name }}' IP address: {{ _vm_ip }}"
+  when:
+    - libvirt_vm_wait_for_ip | default(false) | bool
+    - _vm_ip is defined

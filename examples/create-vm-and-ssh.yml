@@ -1,0 +1,174 @@
+---
+# Example playbook: Create a VM and SSH into it
+# Usage: ansible-playbook -i inventory create-vm-and-ssh.yml
+- name: Create VM and access via SSH
+  hosts: libvirt_hosts
+  become: true
+  vars:
+    # VM Configuration
+    vm_name: "my-example-vm"
+    vm_memory_mb: 1024
+    vm_vcpus: 1
+
+    # Paths
+    cloud_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    cloud_image_path: "/var/lib/libvirt/images/jammy-server-cloudimg-amd64.img"
+    vm_disk_path: "/var/lib/libvirt/images/{{ vm_name }}.qcow2"
+    vm_cloudinit_path: "/var/lib/libvirt/images/{{ vm_name }}-cloudinit.iso"
+
+    # SSH Configuration
+    ssh_user: "ubuntu"
+    ssh_key_path: "/root/.ssh/{{ vm_name }}_key"
+
+    # Enable IP retrieval
+    libvirt_vm_wait_for_ip: true
+
+  tasks:
+    # --- Preparation ---
+    - name: Generate SSH key pair
+      community.crypto.openssh_keypair:
+        path: "{{ ssh_key_path }}"
+        type: ed25519
+      register: ssh_key
+
+    - name: Read public key
+      ansible.builtin.slurp:
+        src: "{{ ssh_key_path }}.pub"
+      register: ssh_pub_key
+
+    - name: Download cloud image (if not exists)
+      ansible.builtin.get_url:
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_path }}"
+        mode: "0644"
+        timeout: 300
+
+    - name: Create VM disk from cloud image
+      ansible.builtin.command:
+        cmd: >
+          qemu-img create -f qcow2 -F qcow2
+          -b {{ cloud_image_path }}
+          {{ vm_disk_path }} 10G
+        creates: "{{ vm_disk_path }}"
+
+    - name: Create cloud-init meta-data
+      ansible.builtin.copy:
+        dest: "/tmp/{{ vm_name }}-meta-data"
+        content: |
+          instance-id: {{ vm_name }}
+          local-hostname: {{ vm_name }}
+        mode: "0644"
+
+    - name: Create cloud-init user-data
+      ansible.builtin.copy:
+        dest: "/tmp/{{ vm_name }}-user-data"
+        content: |
+          #cloud-config
+          hostname: {{ vm_name }}
+          users:
+            - name: {{ ssh_user }}
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              shell: /bin/bash
+              ssh_authorized_keys:
+                - {{ ssh_pub_key.content | b64decode | trim }}
+          ssh_pwauth: false
+          package_update: false
+        mode: "0644"
+
+    - name: Create cloud-init ISO
+      ansible.builtin.command:
+        cmd: >
+          genisoimage -output {{ vm_cloudinit_path }}
+          -volid cidata -joliet -rock
+          /tmp/{{ vm_name }}-user-data /tmp/{{ vm_name }}-meta-data
+        creates: "{{ vm_cloudinit_path }}"
+
+    # --- Create VM using libvirt-vm role ---
+    # Role name depends on installation method:
+    #   - ansible-galaxy: stackhpc.libvirt_vm
+    #   - local: adjust roles_path in ansible.cfg
+    - name: Create VM
+      ansible.builtin.include_role:
+        name: stackhpc.libvirt_vm
+      vars:
+        libvirt_vms:
+          - name: "{{ vm_name }}"
+            state: present
+            memory_mb: "{{ vm_memory_mb }}"
+            vcpus: "{{ vm_vcpus }}"
+            volumes:
+              - name: "{{ vm_name }}.qcow2"
+                type: file
+                file_path: "/var/lib/libvirt/images"
+                format: qcow2
+                device: disk
+              - name: "{{ vm_name }}-cloudinit.iso"
+                type: file
+                file_path: "/var/lib/libvirt/images"
+                format: raw
+                device: cdrom
+            interfaces:
+              - network: default
+            start: true
+            autostart: false
+
+    # --- Access the VM ---
+    - name: Display VM IP
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          VM '{{ vm_name }}' created successfully!
+
+          IP Address: {{ libvirt_vm_ips[vm_name] }}
+          SSH User:   {{ ssh_user }}
+          SSH Key:    {{ ssh_key_path }}
+
+          To connect:
+            ssh -i {{ ssh_key_path }} {{ ssh_user }}@{{ libvirt_vm_ips[vm_name] }}
+          ============================================
+
+    - name: Wait for SSH to be ready
+      ansible.builtin.wait_for:
+        host: "{{ libvirt_vm_ips[vm_name] }}"
+        port: 22
+        delay: 5
+        timeout: 120
+
+    - name: Test SSH connection
+      ansible.builtin.command:
+        cmd: >
+          ssh -o StrictHostKeyChecking=no
+          -o UserKnownHostsFile=/dev/null
+          -i {{ ssh_key_path }}
+          {{ ssh_user }}@{{ libvirt_vm_ips[vm_name] }}
+          "echo 'Hello from $(hostname)!'"
+      register: ssh_result
+      changed_when: false
+
+    - name: Show SSH test result
+      ansible.builtin.debug:
+        msg: "{{ ssh_result.stdout }}"
+
+    # --- Save connection info for later use ---
+    - name: Save VM connection info to file
+      ansible.builtin.copy:
+        dest: "/tmp/{{ vm_name }}-connection.sh"
+        content: |
+          #!/bin/bash
+          # Connection script for {{ vm_name }}
+          # Generated by Ansible
+
+          VM_NAME="{{ vm_name }}"
+          VM_IP="{{ libvirt_vm_ips[vm_name] }}"
+          SSH_USER="{{ ssh_user }}"
+          SSH_KEY="{{ ssh_key_path }}"
+
+          ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -i "$SSH_KEY" \
+              "$SSH_USER@$VM_IP" "$@"
+        mode: "0755"
+
+    - name: Connection script created
+      ansible.builtin.debug:
+        msg: "Connection script saved to /tmp/{{ vm_name }}-connection.sh"

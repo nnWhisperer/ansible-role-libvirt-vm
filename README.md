@@ -57,6 +57,20 @@ Role Variables
 - `libvirt_vm_clock_offset`. If defined the instances clock offset is set to
   the provided value. When undefined sync is set to `localtime`.
 
+- `libvirt_vm_wait_for_ip`: Whether to wait for VMs to obtain IP addresses after
+  starting. When enabled, the role will poll for the VM's IP address using
+  `virsh domifaddr`. Default is `false`.
+
+- `libvirt_vm_ip_retries`: Number of retries when waiting for VM IP address.
+  Default is `30`.
+
+- `libvirt_vm_ip_delay`: Delay in seconds between retries when waiting for VM
+  IP address. Default is `10`.
+
+- `libvirt_vm_ips`: Dictionary populated by the role containing VM IP addresses.
+  Format: `{ "vm_name": "ip_address" }`. Use this to retrieve the IP address
+  of created VMs in subsequent tasks.
+
 - `libvirt_vm_trust_guest_rx_filters`: Whether to trust guest receive filters.
   This gets mapped to the `trustGuestRxFilters` attribute of VM interfaces.
   Default is `false`
@@ -283,6 +297,53 @@ Example Playbook
                   source:
                     dev: 'br-datacentre'
 
+
+Example: Retrieving VM IP Address
+---------------------------------
+
+To retrieve the IP address of a VM after creation, enable `libvirt_vm_wait_for_ip`:
+
+    ---
+    - name: Create VM and get its IP
+      hosts: hypervisor
+      roles:
+        - role: stackhpc.libvirt-vm
+          libvirt_vm_wait_for_ip: true
+          libvirt_vms:
+            - state: present
+              name: 'my-vm'
+              memory_mb: 1024
+              vcpus: 2
+              volumes:
+                - name: 'my-vm-disk'
+                  device: 'disk'
+                  format: 'qcow2'
+                  capacity: '20GB'
+                  pool: 'default'
+              interfaces:
+                - network: 'default'
+
+      post_tasks:
+        - name: Display VM IP addresses
+          debug:
+            var: libvirt_vm_ips
+
+        - name: Use the VM IP
+          debug:
+            msg: "VM 'my-vm' has IP: {{ libvirt_vm_ips['my-vm'] }}"
+
+Note: IP detection works best when the guest VM has the QEMU guest agent
+installed. Without it, the role falls back to checking DHCP leases or ARP
+tables, which may be less reliable.
+
+Additional Examples
+-------------------
+
+See the `examples/` directory for complete working examples:
+
+- `examples/minimal-example.yml` - Minimal example showing IP retrieval
+- `examples/create-vm-and-ssh.yml` - Full example with cloud-init and SSH test
+- `examples/create-and-connect.sh` - Shell script wrapper
 
 Author Information
 ------------------

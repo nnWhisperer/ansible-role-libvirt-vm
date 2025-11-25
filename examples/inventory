@@ -1,0 +1,12 @@
+# Example inventory for libvirt VM creation
+# Modify this to point to your libvirt host
+
+[libvirt_hosts]
+# For local libvirt:
+localhost ansible_connection=local
+
+# For remote libvirt host (uncomment and modify):
+# kvm-server ansible_host=192.168.1.100 ansible_user=root
+
+[libvirt_hosts:vars]
+ansible_python_interpreter=/usr/bin/python3

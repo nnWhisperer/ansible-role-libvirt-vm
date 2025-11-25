@@ -1,0 +1,38 @@
+---
+# Minimal example: How to use libvirt_vm_ips after VM creation
+#
+# Key points:
+#   1. Set libvirt_vm_wait_for_ip: true
+#   2. Access IP via libvirt_vm_ips['vm-name']
+
+- name: Minimal VM creation with IP retrieval
+  hosts: libvirt_hosts
+  become: true
+  vars:
+    libvirt_vm_wait_for_ip: true  # <-- Enable IP retrieval
+
+  tasks:
+    - name: Create VM
+      ansible.builtin.include_role:
+        name: stackhpc.libvirt_vm
+      vars:
+        libvirt_vms:
+          - name: "my-vm"
+            memory_mb: 1024
+            vcpus: 1
+            volumes:
+              - name: "my-vm.qcow2"
+                type: file
+                format: qcow2
+                device: disk
+            interfaces:
+              - network: default
+
+    # After the role completes, IPs are available in libvirt_vm_ips
+    - name: Show the VM IP
+      debug:
+        msg: "VM IP: {{ libvirt_vm_ips['my-vm'] }}"
+
+    # Use the IP to SSH, configure, etc.
+    - name: SSH into the VM
+      command: ssh user@{{ libvirt_vm_ips['my-vm'] }} "hostname"
