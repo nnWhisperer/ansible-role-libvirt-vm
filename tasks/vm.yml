@@ -6,7 +6,7 @@
     owner: "{{ libvirt_vm_log_owner }}"
     group: "{{ libvirt_vm_log_owner }}"
     recurse: true
-    mode: 0770
+    mode: "0770"
   when: console_log_enabled | bool
   become: "{{ libvirt_vm_sudo }}"
 

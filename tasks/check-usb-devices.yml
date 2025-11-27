@@ -1,6 +1,6 @@
 ---
 - name: List USB hardware
-  ansible.builtin.command: lsusb  -d {{ usb_device.vendor }}:{{ usb_device.product }}
+  ansible.builtin.command: lsusb -d {{ usb_device.vendor }}:{{ usb_device.product }}
   register: host_attached_usb_device
   become: true
   changed_when: false

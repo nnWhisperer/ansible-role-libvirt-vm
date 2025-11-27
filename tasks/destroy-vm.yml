@@ -7,16 +7,17 @@
     command: list_vms
     uri: "{{ libvirt_vm_uri | default(omit, true) }}"
   register: result
-  become: true
+  become: "{{ libvirt_vm_sudo }}"
 
-- name: Destory the VM is existing
+- name: Destroy the VM if existing
+  when: vm.name in result.list_vms
   block:
     - name: Ensure the VM is absent
       community.libvirt.virt:
         name: "{{ vm.name }}"
         state: destroyed
         uri: "{{ libvirt_vm_uri | default(omit, true) }}"
-      become: true
+      become: "{{ libvirt_vm_sudo }}"
 
     # note(wszumski): the virt module does not seem to support
     # removing vms with nvram defined - as a workaround, use the
@@ -31,6 +32,9 @@
           undefine
           {% if boot_firmware == 'efi' %} --nvram{% endif %}
           {{ vm.name }}
-      become: true
+      become: "{{ libvirt_vm_sudo }}"
       changed_when: true
-  when: vm.name in result.list_vms
+  rescue:
+    - name: Log VM destruction failure
+      ansible.builtin.debug:
+        msg: "Warning: Failed to destroy VM '{{ vm.name }}'. It may have already been removed."

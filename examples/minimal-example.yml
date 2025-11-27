@@ -30,9 +30,10 @@
 
     # After the role completes, IPs are available in libvirt_vm_ips
     - name: Show the VM IP
-      debug:
+      ansible.builtin.debug:
         msg: "VM IP: {{ libvirt_vm_ips['my-vm'] }}"
 
     # Use the IP to SSH, configure, etc.
     - name: SSH into the VM
-      command: ssh user@{{ libvirt_vm_ips['my-vm'] }} "hostname"
+      ansible.builtin.command: ssh user@{{ libvirt_vm_ips['my-vm'] }} "hostname"
+      changed_when: false

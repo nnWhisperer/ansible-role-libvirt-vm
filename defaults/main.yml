@@ -90,7 +90,7 @@ libvirt_vms:
       boot_firmware: bios
 
 # Variables to add to the enviroment that is used to execute virsh commands
-libvirt_vm_virsh_default_env: "{{  { 'LIBVIRT_DEFAULT_URI': libvirt_vm_uri } if libvirt_vm_uri else {} }}"
+libvirt_vm_virsh_default_env: "{{ {'LIBVIRT_DEFAULT_URI': libvirt_vm_uri} if libvirt_vm_uri else {} }}"
 
 # Override for the libvirt connection uri. Leave unset to use the default.
 libvirt_vm_uri: ""

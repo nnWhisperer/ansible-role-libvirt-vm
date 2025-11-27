@@ -8,7 +8,8 @@
         - "{{ ansible_facts.os_family }}.yml"
   tags: vars
 
-- ansible.builtin.include_tasks: autodetect.yml
+- name: Autodetect virtualisation engine and emulator
+  ansible.builtin.include_tasks: autodetect.yml
   # We don't need to know the engine and emulator if we're not creating any new
   # VMs.
   when: >-
@@ -20,17 +21,19 @@
   vars:
     is_efi: >-
       (libvirt_vms | selectattr('state', 'defined')
-        | selectattr('state', 'equalto', 'absent') |
-        | selectattr('boot_firmware', 'equalto', 'efi')) | bool
+        | selectattr('state', 'notqualto', 'absent')
+        | selectattr('boot_firmware', 'defined')
+        | selectattr('boot_firmware', 'equalto', 'efi') | list | length > 0) | bool
     packages:
       - "{{ 'qemu-img' if ansible_facts.os_family == 'RedHat' else 'qemu-utils' }}"
-      - "{{ 'ovmf' if ansible_facts.os_family == 'Debian' and is_efi }}"
+      - "{{ 'ovmf' if ansible_facts.os_family == 'Debian' and is_efi else '' }}"
   ansible.builtin.package:
     name: "{{ packages | select | unique | list }}"
     update_cache: "{{ True if ansible_facts.pkg_mgr == 'apt' else omit }}"
   become: true
 
-- include_tasks: volumes.yml
+- name: Create VM volumes
+  ansible.builtin.include_tasks: volumes.yml
   vars:
     volumes: "{{ vm.volumes | default([], true) }}"
   with_items: "{{ libvirt_vms }}"
@@ -38,7 +41,8 @@
     loop_var: vm
   when: (vm.state | default('present', true)) == 'present'
 
-- include_tasks: vm.yml
+- name: Create and start VMs
+  ansible.builtin.include_tasks: vm.yml
   vars:
     console_log_enabled: "{{ vm.console_log_enabled | default(false) }}"
     console_log_path: >-
@@ -61,7 +65,8 @@
     loop_var: vm
   when: (vm.state | default('present', true)) == 'present'
 
-- include_tasks: destroy-vm.yml
+- name: Destroy VMs
+  ansible.builtin.include_tasks: destroy-vm.yml
   vars:
     boot_firmware: "{{ vm.boot_firmware | default('bios', true) | lower }}"
   with_items: "{{ libvirt_vms }}"
@@ -69,7 +74,8 @@
     loop_var: vm
   when: (vm.state | default('present', true)) == 'absent'
 
-- include_tasks: destroy-volumes.yml
+- name: Destroy VM volumes
+  ansible.builtin.include_tasks: destroy-volumes.yml
   vars:
     volumes: "{{ vm.volumes | default([], true) }}"
   with_items: "{{ libvirt_vms }}"
